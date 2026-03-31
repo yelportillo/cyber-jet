@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Cyber Flap</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            font-family: 'Orbitron', monospace;
+            background: #050510;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #score {
+            position: absolute;
+            top: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 72px;
+            font-weight: 900;
+            color: #0ff;
+            text-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+        }
+
+        #start-screen, #game-over {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #0a0a1a 0%, #1a0a3e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            pointer-events: auto;
+        }
+
+        #start-screen h1, #game-over h2 {
+            font-size: 48px;
+            font-weight: 900;
+            background: linear-gradient(180deg, #0ff 0%, #ff00ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 20px;
+        }
+
+        #start-screen p {
+            color: #888;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        #final-score {
+            font-size: 36px;
+            color: #0ff;
+            margin-bottom: 10px;
+        }
+
+        #high-score {
+            font-size: 18px;
+            color: #888;
+            margin-bottom: 40px;
+        }
+
+        .btn {
+            padding: 20px 60px;
+            background: transparent;
+            border: 3px solid #0ff;
+            color: #0ff;
+            font-family: 'Orbitron', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+            transition: all 0.3s ease;
+            pointer-events: auto;
+        }
+
+        .btn:hover, .btn:active {
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.5);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #game-over {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div id="score">0</div>
+    </div>
+
+    <div id="start-screen">
+        <h1>CYBER JET</h1>
+        <p>Tap, click, or press SPACE to boost</p>
+        <button class="btn" id="start-btn">PLAY</button>
+    </div>
+
+    <div id="game-over">
+        <h2>GAME OVER</h2>
+        <div id="final-score">0</div>
+        <div id="high-score">Best: 0</div>
+        <button class="btn" id="restart-btn">TRY AGAIN</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game state
+        let gameRunning = false;
+        let score = 0;
+        let highScore = localStorage.getItem('cyberFlapHighScore') || 0;
+        let frames = 0;
+
+        // Jet
+        const jet = {
+            x: 100,
+            y: 0,
+            velocity: 0,
+            gravity: 0.5,
+            boost: -10,
+            width: 40,
+            height: 20,
+            rotation: 0
+        };
+
+        // Pipes
+        let pipes = [];
+        const PIPE_WIDTH = 60;
+        const PIPE_GAP = 220;
+        const PIPE_SPEED = 2.5;
+
+        // Background
+        let gridOffset = 0;
+        let cityOffset = 0;
+
+        // Resize
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            jet.x = canvas.width * 0.2;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input
+        function boost() {
+            if (!gameRunning) return;
+            jet.velocity = jet.boost;
+            createParticles(jet.x - 20, jet.y + 5, 8, '#ff6600');
+            createParticles(jet.x - 20, jet.y - 5, 8, '#ff6600');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (gameRunning) boost();
+            }
+        });
+
+        canvas.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            if (gameRunning) boost();
+        });
+
+        document.addEventListener('touchstart', (e) => {
+            if (gameRunning) {
+                e.preventDefault();
+                boost();
+            }
+        }, { passive: false });
+
+        // Particles
+        let particles = [];
+        function createParticles(x, y, count, color) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 5,
+                    life: 20 + Math.random() * 20,
+                    color: color,
+                    size: 2 + Math.random() * 3
+                });
+            }
+        }
+
+        // Update
+        function update() {
+            if (!gameRunning) return;
+
+            frames++;
+
+            // Jet physics
+            jet.velocity += jet.gravity;
+            jet.y += jet.velocity;
+            jet.rotation = Math.min(Math.PI / 6, Math.max(-Math.PI / 6, jet.velocity * 0.05));
+
+            // Floor/Ceiling collision
+            if (jet.y + jet.height/2 > canvas.height - 50 || jet.y - jet.height/2 < 0) {
+                gameOver();
+                return;
+            }
+
+            // Spawn pipes
+            if (frames % 140 === 0) {
+                const gapY = 100 + Math.random() * (canvas.height - 300);
+                pipes.push({
+                    x: canvas.width,
+                    gapY: gapY,
+                    passed: false
+                });
+            }
+
+            // Update pipes
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                const pipe = pipes[i];
+                pipe.x -= PIPE_SPEED;
+
+                // Collision
+                if (jet.x + jet.width/2 > pipe.x && 
+                    jet.x - jet.width/2 < pipe.x + PIPE_WIDTH) {
+                    if (jet.y - jet.height/2 < pipe.gapY - PIPE_GAP/2 ||
+                        jet.y + jet.height/2 > pipe.gapY + PIPE_GAP/2) {
+                        gameOver();
+                        return;
+                    }
+                }
+
+                // Score
+                if (!pipe.passed && pipe.x + PIPE_WIDTH < jet.x) {
+                    pipe.passed = true;
+                    score++;
+                    document.getElementById('score').textContent = score;
+                    createParticles(jet.x, jet.y, 10, '#ff0');
+                }
+
+                // Remove off-screen pipes
+                if (pipe.x + PIPE_WIDTH < 0) {
+                    pipes.splice(i, 1);
+                }
+            }
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // Scroll background
+            gridOffset = (gridOffset + PIPE_SPEED * 0.5) % 50;
+            cityOffset = (cityOffset + PIPE_SPEED * 0.2) % 100;
+        }
+
+        // Draw
+        function draw() {
+            // Clear
+            ctx.fillStyle = '#050510';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Background gradient
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, '#0a0a1a');
+            grad.addColorStop(1, '#1a0a3e');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw city skyline
+            ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+            for (let i = 0; i < canvas.width / 50 + 2; i++) {
+                const x = i * 50 - cityOffset;
+                const height = 50 + Math.sin(i * 0.5) * 30 + Math.cos(i * 0.3) * 20;
+                ctx.fillRect(x, canvas.height - 50 - height, 45, height);
+                
+                // Windows
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.1)';
+                for (let j = 0; j < height / 15; j++) {
+                    if (Math.random() > 0.5) {
+                        ctx.fillRect(x + 10, canvas.height - 50 - height + j * 15 + 5, 10, 8);
+                    }
+                    if (Math.random() > 0.5) {
+                        ctx.fillRect(x + 25, canvas.height - 50 - height + j * 15 + 5, 10, 8);
+                    }
+                }
+                ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+            }
+
+            // Draw grid floor
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+            ctx.lineWidth = 1;
+            
+            // Vertical lines
+            for (let i = 0; i < canvas.width / 50 + 2; i++) {
+                const x = i * 50 - gridOffset;
+                ctx.beginPath();
+                ctx.moveTo(x, canvas.height - 50);
+                ctx.lineTo(x - (x - canvas.width/2) * 2, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Horizontal lines
+            for (let i = 0; i < 10; i++) {
+                const y = canvas.height - 50 + i * 10;
+                ctx.globalAlpha = 1 - i * 0.1;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+
+            // Floor glow
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx.fillRect(0, canvas.height - 52, canvas.width, 2);
+
+            // Draw pipes
+            for (let pipe of pipes) {
+                // Pipe glow
+                ctx.shadowColor = '#ff00ff';
+                ctx.shadowBlur = 20;
+                
+                // Top pipe
+                const grad1 = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+                grad1.addColorStop(0, '#ff00ff');
+                grad1.addColorStop(0.5, '#ff88ff');
+                grad1.addColorStop(1, '#ff00ff');
+                ctx.fillStyle = grad1;
+                ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY - PIPE_GAP/2);
+                
+                // Top pipe border
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.gapY - PIPE_GAP/2);
+                
+                // Bottom pipe
+                const grad2 = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+                grad2.addColorStop(0, '#ff00ff');
+                grad2.addColorStop(0.5, '#ff88ff');
+                grad2.addColorStop(1, '#ff00ff');
+                ctx.fillStyle = grad2;
+                ctx.fillRect(pipe.x, pipe.gapY + PIPE_GAP/2, PIPE_WIDTH, canvas.height - pipe.gapY - PIPE_GAP/2);
+                
+                // Bottom pipe border
+                ctx.strokeRect(pipe.x, pipe.gapY + PIPE_GAP/2, PIPE_WIDTH, canvas.height - pipe.gapY - PIPE_GAP/2);
+                
+                ctx.shadowBlur = 0;
+
+                // Pipe caps
+                ctx.fillStyle = '#ff88ff';
+                ctx.fillRect(pipe.x - 5, pipe.gapY - PIPE_GAP/2 - 20, PIPE_WIDTH + 10, 20);
+                ctx.fillRect(pipe.x - 5, pipe.gapY + PIPE_GAP/2, PIPE_WIDTH + 10, 20);
+            }
+
+            // Draw jet
+            ctx.save();
+            ctx.translate(jet.x, jet.y);
+            ctx.rotate(jet.rotation);
+            
+            // Afterburner glow
+            ctx.shadowColor = '#ff6600';
+            ctx.shadowBlur = 40;
+            
+            // Engine flames
+            ctx.fillStyle = '#ff6600';
+            ctx.beginPath();
+            ctx.moveTo(-jet.width/2 - 10, -5);
+            ctx.lineTo(-jet.width/2 - 25 - Math.random() * 10, 0);
+            ctx.lineTo(-jet.width/2 - 10, 5);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ffaa00';
+            ctx.beginPath();
+            ctx.moveTo(-jet.width/2 - 5, -3);
+            ctx.lineTo(-jet.width/2 - 15 - Math.random() * 8, 0);
+            ctx.lineTo(-jet.width/2 - 5, 3);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            
+            // Jet body
+            const bodyGrad = ctx.createLinearGradient(-jet.width/2, 0, jet.width/2, 0);
+            bodyGrad.addColorStop(0, '#444');
+            bodyGrad.addColorStop(0.3, '#888');
+            bodyGrad.addColorStop(0.7, '#666');
+            bodyGrad.addColorStop(1, '#0ff');
+            ctx.fillStyle = bodyGrad;
+            
+            ctx.beginPath();
+            ctx.moveTo(jet.width/2, 0);
+            ctx.lineTo(-jet.width/2, -jet.height/2);
+            ctx.lineTo(-jet.width/4, 0);
+            ctx.lineTo(-jet.width/2, jet.height/2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Cockpit
+            ctx.fillStyle = '#0ff';
+            ctx.beginPath();
+            ctx.ellipse(5, -3, 8, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Wings
+            ctx.fillStyle = '#666';
+            ctx.beginPath();
+            ctx.moveTo(-5, -jet.height/2);
+            ctx.lineTo(-15, -jet.height - 5);
+            ctx.lineTo(-5, -jet.height/2 + 3);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(-5, jet.height/2);
+            ctx.lineTo(-15, jet.height + 5);
+            ctx.lineTo(-5, jet.height/2 - 3);
+            ctx.fill();
+            
+            // Neon accents
+            ctx.strokeStyle = '#0ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(jet.width/2, 0);
+            ctx.lineTo(-jet.width/2, -jet.height/2);
+            ctx.lineTo(-jet.width/4, 0);
+            ctx.lineTo(-jet.width/2, jet.height/2);
+            ctx.closePath();
+            ctx.stroke();
+            
+            ctx.restore();
+            ctx.shadowBlur = 0;
+
+            // Draw particles
+            for (let p of particles) {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 40;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Scanline effect
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.02)';
+            for (let y = 0; y < canvas.height; y += 4) {
+                ctx.fillRect(0, y, canvas.width, 1);
+            }
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            if (gameRunning) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Start game
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-over').style.display = 'none';
+            gameRunning = true;
+            score = 0;
+            frames = 0;
+            jet.y = canvas.height / 2;
+            jet.velocity = 0;
+            pipes = [];
+            particles = [];
+            document.getElementById('score').textContent = '0';
+            gameLoop();
+        }
+
+        // Game over
+        function gameOver() {
+            gameRunning = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('cyberFlapHighScore', highScore);
+            }
+            document.getElementById('final-score').textContent = 'Score: ' + score;
+            document.getElementById('high-score').textContent = 'Best: ' + highScore;
+            document.getElementById('game-over').style.display = 'flex';
+        }
+
+        // Event listeners
+        document.getElementById('start-btn').addEventListener('click', startGame);
+        document.getElementById('restart-btn').addEventListener('click', startGame);
+
+        // Initial draw
+        draw();
+    </script>
+</body>
+</html>
