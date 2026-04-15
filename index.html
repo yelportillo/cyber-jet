@@ -15,7 +15,10 @@
             align-items: center;
             height: 100vh;
             color: #0ff;
-            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+
         }
         #game-container {
             position: relative;
@@ -103,9 +106,18 @@
         const overlay = document.getElementById('overlay');
 
         // Audio Setup
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let audioCtx;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } else if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
 
         function playNote(freq, type, duration, volume = 0.1) {
+            if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
@@ -119,6 +131,7 @@
         }
 
         function playKick() {
+            if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = 'sine';
@@ -133,6 +146,7 @@
         }
 
         function playSnare() {
+            if (!audioCtx) return;
             const bufferSize = audioCtx.sampleRate * 0.1;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
@@ -158,7 +172,7 @@
             let step = 0;
 
             setInterval(() => {
-                if (gameRunning) {
+                if (gameRunning && audioCtx) {
                     // Melody
                     const note = notes[Math.floor(Math.random() * notes.length)];
                     playNote(note, 'sine', 1.2, 0.04);
@@ -199,6 +213,7 @@
         }
 
         function startGame() {
+            initAudio();
             init();
             gameRunning = true;
             overlay.style.display = 'none';
@@ -438,11 +453,18 @@
             }
         });
 
-        window.addEventListener('mousedown', () => {
+        window.addEventListener('mousedown', (e) => {
             if (gameRunning) {
                 plane.velocity = FLAP;
             }
         });
+
+        window.addEventListener('touchstart', (e) => {
+            if (gameRunning) {
+                e.preventDefault();
+                plane.velocity = FLAP;
+            }
+        }, { passive: false });
 
         init();
     </script>
