@@ -107,6 +107,8 @@
 
         // Audio Setup
         let audioCtx;
+        const bgm = new Audio('music.mp3');
+        bgm.loop = true;
 
         function initAudio() {
             if (!audioCtx) {
@@ -114,6 +116,7 @@
             } else if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
+            bgm.play().catch(e => console.error("BGM playback failed:", e));
         }
 
         function playNote(freq, type, duration, volume = 0.1) {
@@ -168,23 +171,9 @@
         }
 
         function playBgm() {
-            const notes = [196.00, 220.00, 261.63, 293.66, 329.63, 349.23, 392.00];
-            let step = 0;
-
-            setInterval(() => {
-                if (gameRunning && audioCtx) {
-                    // Melody
-                    const note = notes[Math.floor(Math.random() * notes.length)];
-                    playNote(note, 'sine', 1.2, 0.04);
-
-                    // Drums: Classic 4/4 feel
-                    if (step % 4 === 0) playKick(); // Kick on 1 and 3
-                    if (step % 4 === 2) playSnare(); // Snare on 2 and 4
-
-                    step++;
-                }
-            }, 500);
+            // Programmatic BGM is now replaced by music.mp3
         }
+
 
         playBgm();
 
@@ -222,6 +211,8 @@
 
         function gameOver() {
             gameRunning = false;
+            bgm.pause();
+            bgm.currentTime = 0;
             overlay.style.display = 'flex';
             overlay.innerHTML = `
                 <h1>SYSTEM CRASH</h1>
